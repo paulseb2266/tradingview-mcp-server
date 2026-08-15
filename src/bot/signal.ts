@@ -188,7 +188,7 @@ function formatSignal(s: OptionSetup, rank: number, maxSignals: number, contract
     ``,
     `*Contract*`,
     `Strike $${s.strikePrice} · Exp ${s.expiryDate} · ${s.dte}d DTE`,
-    `Delta ${s.delta.toFixed(2)} · Ask $${s.ask.toFixed(2)} · Cost $${s.contractCost.toFixed(0)}`,
+    `Delta ${s.delta.toFixed(2)} · Theta ${s.theta.toFixed(2)} · Ask $${s.ask.toFixed(2)} · Cost $${s.contractCost.toFixed(0)}`,
     `IV ${ivStr} · Spread ${spreadStr} · OTM ${otmStr}`,
     `Vol ${s.volume.toLocaleString()} · OI ${s.openInterest.toLocaleString()}`,
     ``,
@@ -256,7 +256,7 @@ function formatMessage(result: ScanResult, top: OptionSetup[], date: string, max
   if (top.length > 0) {
     const footer = [
       ``,
-      `_DTE 21–45 · Delta 0.35–0.55 · Spread <15% · OI ≥1K · IV <120%_`,
+      `_DTE 15–120 · Delta 0.3–0.8 · Spread <15% · OI ≥1K · IV <120%_`,
       `_Exit rule: -50% stop same day_`,
     ].join("\n");
     const contractStats = `\n${statsHeader}`;

@@ -97,6 +97,7 @@ export interface OptionSetup {
   openInterest:        number;
   iv:                  number;
   delta:               number;
+  theta:               number;  // per-day time decay (negative), in $ per share
   underlyingPrice:     number;
   pctOtm:              number;
   ta:                  TASignal;
@@ -138,13 +139,13 @@ const STRONG_LABELS    = new Set(["strong_buy",  "buy"]);
 const WEAK_LABELS      = new Set(["strong_sell", "sell"]);
 
 // Options filters — quality-first
-const MIN_DTE          = 21;      // was 12
-const MAX_DTE          = 45;      // was 30
+const MIN_DTE          = 15;      // was 21
+const MAX_DTE          = 120;     // was 45
 const MIN_OI           = 1_000;   // was 500
 const MAX_SPREAD_PCT   = 0.15;    // was 0.25 — tighter spread requirement
 const MAX_IV           = 1.20;
-const MIN_DELTA        = 0.35;    // was 0.25
-const MAX_DELTA        = 0.55;
+const MIN_DELTA        = 0.3;     // was 0.35
+const MAX_DELTA        = 0.8;     // was 0.55
 const MIN_STRONG_TFS   = 3;
 
 const EARNINGS_SKIP_DAYS   = 7;
@@ -207,6 +208,24 @@ function bsDelta(spot: number, strike: number, dte: number, iv: number, isCall: 
   if (T <= 0 || iv <= 0 || spot <= 0 || strike <= 0) return 0;
   const d1 = (Math.log(spot / strike) + (rfr + 0.5 * iv * iv) * T) / (iv * Math.sqrt(T));
   return isCall ? normCdf(d1) : normCdf(d1) - 1;
+}
+
+function normPdf(x: number): number {
+  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+}
+
+// Per-calendar-day time decay in $ per share (negative = value lost per day held).
+function bsTheta(spot: number, strike: number, dte: number, iv: number, isCall: boolean, rfr = 0.05): number {
+  const T = dte / 365;
+  if (T <= 0 || iv <= 0 || spot <= 0 || strike <= 0) return 0;
+  const sqrtT = Math.sqrt(T);
+  const d1 = (Math.log(spot / strike) + (rfr + 0.5 * iv * iv) * T) / (iv * sqrtT);
+  const d2 = d1 - iv * sqrtT;
+  const decayTerm = -(spot * normPdf(d1) * iv) / (2 * sqrtT);
+  const rateTerm  = isCall
+    ? -rfr * strike * Math.exp(-rfr * T) * normCdf(d2)
+    :  rfr * strike * Math.exp(-rfr * T) * normCdf(-d2);
+  return (decayTerm + rateTerm) / 365;
 }
 
 // ── OHLCV fetch ────────────────────────────────────────────────────────────────
@@ -712,6 +731,8 @@ export class OptionsScanner {
           const delta = Math.abs(bsDelta(spot, c.strike, dte, iv, isCallMode));
           if (delta < MIN_DELTA || delta > MAX_DELTA) continue;
 
+          const theta = bsTheta(spot, c.strike, dte, iv, isCallMode);
+
           // Volume: preferred ≥1000, waived if OI is strong (threshold relaxed for thin-chain tickers)
           const volume        = c.volume ?? 0;
           const volumeWaiver  = LOW_OI_TICKERS.has(target.ticker) ? 1_000 : 2_000;
@@ -757,7 +778,7 @@ export class OptionsScanner {
           const setup: OptionSetup = {
             ticker: target.ticker, optionType, strikePrice: c.strike,
             expiryDate, dte, isMonthly, bid, ask, contractCost, spreadPct,
-            volume, openInterest: oi, iv, delta, underlyingPrice: spot,
+            volume, openInterest: oi, iv, delta, theta, underlyingPrice: spot,
             pctOtm, ta, compressionState: compression.compressionState,
             expansionPotential: ep,
             breakoutType:  breakout.breakoutType,
