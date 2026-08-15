@@ -43,8 +43,15 @@ export const DEFAULT_TARGETS: ScanTarget[] = [
   { ticker: "RIVN", tvSymbol: "NASDAQ:RIVN"   },
 ];
 
-// These tickers are used only for regime detection — never as option trades.
+// These tickers feed regime detection (and are always force-included in the
+// scan universe for that reason) — SPY and QQQ are also eligible to be
+// traded themselves, subject to the same compression/breakout/options gating
+// as any other ticker.
 export const REGIME_TICKERS = new Set(["SPY", "QQQ", "NDX"]);
+
+// Never eligible as an options trade: NDX is a cash-settled index (SPX-style),
+// not a normal equity/ETF options chain, so it has no tradeable chain here.
+const REGIME_ONLY_TICKERS = new Set(["NDX"]);
 
 export type Regime =
   | "BULLISH"       // SPY + QQQ both buy/strong_buy  → calls only,  +20 bonus
@@ -560,7 +567,7 @@ export class OptionsScanner {
       ({ ticker, status: "COILING",  compressionScore: cs, compressionState: cst,  stopReason: "awaiting breakout above resistance with volume" });
 
     for (const target of this.targets) {
-      if (REGIME_TICKERS.has(target.ticker)) continue;
+      if (REGIME_ONLY_TICKERS.has(target.ticker)) continue;
 
       const ta = taBySymbol.get(target.tvSymbol) ?? taBySymbol.get(target.ticker);
       if (!ta) {
