@@ -22,7 +22,9 @@
     "test:watch": "tsx --test --watch src/tests/*.test.ts",
     "test:integration": "npm run build && TV_INTEGRATION=1 tsx --test src/tests/integration/core-tools.test.ts",
     "prepublishOnly": "npm run build && npm test",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "bot": "tsx src/bot/index.ts",
+    "bot:live": "READ_ONLY=false tsx src/bot/index.ts"
   },
   "keywords": [
     "mcp",
@@ -47,7 +49,8 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "yahoo-finance2": "^3.14.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.19",
