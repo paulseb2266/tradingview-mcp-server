@@ -156,9 +156,10 @@ const EARNINGS_SKIP_DAYS   = 7;
 const OHLCV_DAYS           = 65;  // daily bars to fetch for compression/breakout
 
 // Breakout
-const MIN_VOLUME_SPIKE     = 1.0;  // was 1.3, then 1.15 — confirmed breakout needs avg volume or better
-const RETEST_TOLERANCE_PCT = 0.03; // was 0.02 — how close a retest must come to the broken level
-const EMA_CROSS_LOOKBACK   = 5;    // was 3 — bars to search back for the actual EMA cross
+const MIN_VOLUME_SPIKE       = 1.0;  // was 1.3, then 1.15 — confirmed breakout needs avg volume or better
+const RETEST_TOLERANCE_PCT   = 0.03; // was 0.02 — how close a retest must come to the broken level
+const EMA_CROSS_LOOKBACK     = 5;    // was 3 — bars to search back for the actual EMA cross
+const PRICE_BREAK_TOLERANCE_PCT = 0.01; // Pattern A: close within 1% of the level counts as a break
 
 // Compression — minimum combined score required to proceed
 const MIN_COMPRESSION_SCORE = 0.15;   // was 0.20 — lets EARLY BUILD (not-yet-coiled) setups through
@@ -364,15 +365,16 @@ function detectBreakout(bars: OHLCVBar[], isCall: boolean): BreakoutSignal {
   const avgVol     = lookback.reduce((s, b) => s + b.volume, 0) / lookback.length;
   const volumeSpike = avgVol > 0 ? current.volume / avgVol : 1;
 
-  // Pattern A: close above resistance / below support with volume confirmation
-  if (isCall && current.close > resistance && volumeSpike >= MIN_VOLUME_SPIKE) {
+  // Pattern A: close at/above resistance (within a 1% tolerance) / at/below support,
+  // with volume confirmation
+  if (isCall && current.close >= resistance * (1 - PRICE_BREAK_TOLERANCE_PCT) && volumeSpike >= MIN_VOLUME_SPIKE) {
     const pct = (current.close - resistance) / resistance;
-    const breakoutStrength = Math.min(1, pct * 15 + Math.min(0.5, (volumeSpike - 1) * 0.3));
+    const breakoutStrength = Math.max(0, Math.min(1, pct * 15 + Math.min(0.5, (volumeSpike - 1) * 0.3)));
     return { hasBreakout: true, breakoutType: "volume_close", breakoutStrength, volumeSpike, triggerLevel: resistance };
   }
-  if (!isCall && current.close < support && volumeSpike >= MIN_VOLUME_SPIKE) {
+  if (!isCall && current.close <= support * (1 + PRICE_BREAK_TOLERANCE_PCT) && volumeSpike >= MIN_VOLUME_SPIKE) {
     const pct = (support - current.close) / support;
-    const breakoutStrength = Math.min(1, pct * 15 + Math.min(0.5, (volumeSpike - 1) * 0.3));
+    const breakoutStrength = Math.max(0, Math.min(1, pct * 15 + Math.min(0.5, (volumeSpike - 1) * 0.3)));
     return { hasBreakout: true, breakoutType: "volume_close", breakoutStrength, volumeSpike, triggerLevel: support };
   }
 
