@@ -262,7 +262,7 @@ function formatMessage(result: ScanResult, top: OptionSetup[], date: string, max
   if (top.length > 0) {
     const footer = [
       ``,
-      `_DTE 15–120 · Delta 0.3–0.8 · Spread <15% · OI ≥1K · IV <120%_`,
+      `_DTE 15–120 · Delta 0.25–0.8 (0.3 floor <$200, 0.25 above) · Spread <15% · OI ≥1K · IV <120%_`,
       `_Exit rule: -50% stop same day_`,
     ].join("\n");
     const contractStats = `\n${statsHeader}`;

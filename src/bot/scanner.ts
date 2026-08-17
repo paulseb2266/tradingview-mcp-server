@@ -154,8 +154,19 @@ const MAX_DTE          = 120;     // was 45
 const MIN_OI           = 500;     // was 1,000 — applies across the board now, not just thin names
 const MAX_SPREAD_PCT   = 0.15;    // was 0.25 — tighter spread requirement
 const MAX_IV           = 1.20;
-const MIN_DELTA        = 0.3;     // was 0.35
 const MAX_DELTA        = 0.8;     // was 0.55
+
+// Delta floor is tiered by spot price, same rationale as the OTM tiers below:
+// a strike cheap enough for the $500 cap on a high-priced stock naturally lands
+// further OTM, which pulls its delta down. Lowering the floor for $200+ names
+// gives them a realistic shot at a qualifying contract.
+const DELTA_TIER_PRICE = 200; // spot > this -> lower floor
+const MIN_DELTA_LOW    = 0.3;  // was flat 0.3 for all tickers — unchanged for spot <= $200
+const MIN_DELTA_HIGH   = 0.25; // spot > $200
+
+function minDeltaFor(spot: number): number {
+  return spot > DELTA_TIER_PRICE ? MIN_DELTA_HIGH : MIN_DELTA_LOW;
+}
 const MIN_STRONG_TFS   = 2;     // was 3 — plus at least one intraday TF required, see gate below
 
 // OTM distance is tiered by spot price. A near-the-money call on an expensive
@@ -820,9 +831,9 @@ export class OptionsScanner {
           const maxOtmPct = maxOtmPctFor(spot);
           if (Math.abs(pctOtm) > maxOtmPct) continue;
 
-          // Delta — quality zone
+          // Delta — quality zone, tiered floor by spot price (see minDeltaFor)
           const delta = Math.abs(bsDelta(spot, c.strike, dte, iv, isCallMode));
-          if (delta < MIN_DELTA || delta > MAX_DELTA) continue;
+          if (delta < minDeltaFor(spot) || delta > MAX_DELTA) continue;
 
           const theta = bsTheta(spot, c.strike, dte, iv, isCallMode);
 
