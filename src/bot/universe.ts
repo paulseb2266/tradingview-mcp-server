@@ -25,7 +25,7 @@ const DEFAULTS: Required<UniverseOptions> = {
   minPrice:          5,
   maxPrice:          1000,
   minAvgVolume:      1_000_000,
-  minRelativeVolume: 1.2,
+  minRelativeVolume: 1.0,
   minMarketCap:      2_000_000_000,
 };
 

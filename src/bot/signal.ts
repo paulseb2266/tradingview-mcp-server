@@ -14,7 +14,7 @@
 
 import fetch from "node-fetch";
 import {
-  OptionsScanner, DEFAULT_TARGETS, REGIME_TICKERS,
+  OptionsScanner, DEFAULT_TARGETS,
   type ScanTarget, type OptionSetup, type Regime, type ScanResult, type TickerState, type ScoreBreakdown,
 } from "./scanner.js";
 import { buildDynamicUniverse } from "./universe.js";
@@ -298,6 +298,9 @@ async function sendTelegram(token: string, chatId: string, text: string): Promis
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
+// TAClient.rankByTA (src/api/ta.ts) hard-caps a single call at 50 symbols.
+const MAX_TA_SYMBOLS = 50;
+
 async function buildTargets(): Promise<ScanTarget[]> {
   const useDynamic = (process.env.DYNAMIC_UNIVERSE ?? "true").toLowerCase() !== "false";
   if (!useDynamic) return DEFAULT_TARGETS;
@@ -305,23 +308,22 @@ async function buildTargets(): Promise<ScanTarget[]> {
   const limit   = parseInt(process.env.UNIVERSE_LIMIT ?? "40", 10);
   const dynamic = await buildDynamicUniverse({ limit });
 
-  if (dynamic.length === 0) {
-    console.log("[signal] Dynamic universe returned no candidates — falling back to DEFAULT_TARGETS");
-    return DEFAULT_TARGETS;
-  }
+  // DEFAULT_TARGETS is always merged in as a floor — thin-candidate days
+  // (e.g. low relative-volume days) still have a baseline set of tickers to
+  // scan instead of coming up empty. This also covers total screen failure.
+  const seen    = new Set(DEFAULT_TARGETS.map(t => t.ticker));
+  const targets = [...DEFAULT_TARGETS];
 
-  // Regime tickers (SPY/QQQ/NDX) are always required, never traded directly.
-  const regimeTargets = DEFAULT_TARGETS.filter(t => REGIME_TICKERS.has(t.ticker));
-  const seen    = new Set(regimeTargets.map(t => t.ticker));
-  const targets = [...regimeTargets];
-
+  let dynamicAdded = 0;
   for (const t of dynamic) {
+    if (targets.length >= MAX_TA_SYMBOLS) break; // stay under rankByTA's 50-symbol cap
     if (seen.has(t.ticker)) continue;
     seen.add(t.ticker);
     targets.push(t);
+    dynamicAdded++;
   }
 
-  console.log(`[signal] Dynamic universe: ${dynamic.length} screened candidates (+${regimeTargets.length} regime tickers) = ${targets.length} targets`);
+  console.log(`[signal] Dynamic universe: ${dynamic.length} screened candidates, ${dynamicAdded} added (+${DEFAULT_TARGETS.length} baseline watchlist) = ${targets.length} targets`);
   return targets;
 }
 
