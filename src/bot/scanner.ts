@@ -144,7 +144,8 @@ const WEAK_LABELS      = new Set(["strong_sell", "sell"]);
 // Options filters — quality-first
 const MIN_DTE          = 15;      // was 21
 const MAX_DTE          = 120;     // was 45
-const MIN_OI           = 1_000;   // was 500
+const MIN_OI           = 500;     // was 1,000 — applies across the board now, not just thin names
+const MAX_OTM_PCT      = 15;      // was 10
 const MAX_SPREAD_PCT   = 0.15;    // was 0.25 — tighter spread requirement
 const MAX_IV           = 1.20;
 const MIN_DELTA        = 0.3;     // was 0.35
@@ -160,7 +161,8 @@ const MIN_VOLUME_SPIKE     = 1.3; // confirmed breakout needs 1.3x avg volume
 // Compression — minimum combined score required to proceed
 const MIN_COMPRESSION_SCORE = 0.15;   // was 0.20 — lets EARLY BUILD (not-yet-coiled) setups through
 
-// Tickers with thinner options chains get relaxed OI/volume thresholds
+// Tickers with thinner options chains get a relaxed volume waiver (see below).
+// OI floor itself is now uniform across all tickers (MIN_OI).
 const LOW_OI_TICKERS = new Set(["HOOD", "SOFI", "RIVN", "MARA", "RIOT", "SOUN"]);
 
 // ── Internal types ─────────────────────────────────────────────────────────────
@@ -745,10 +747,9 @@ export class OptionsScanner {
           const spreadPct = (ask - bid) / mid;
           if (spreadPct > MAX_SPREAD_PCT) continue;
 
-          // OI hard floor (relaxed for thin-chain tickers)
-          const oi    = c.openInterest ?? 0;
-          const minOI = LOW_OI_TICKERS.has(target.ticker) ? 500 : MIN_OI;
-          if (oi < minOI) continue;
+          // OI hard floor
+          const oi = c.openInterest ?? 0;
+          if (oi < MIN_OI) continue;
 
           // IV bounds
           const iv = c.impliedVolatility ?? 0;
@@ -756,7 +757,7 @@ export class OptionsScanner {
 
           // OTM distance
           const pctOtm = ((c.strike - spot) / spot) * 100;
-          if (Math.abs(pctOtm) > 10) continue;
+          if (Math.abs(pctOtm) > MAX_OTM_PCT) continue;
 
           // Delta — quality zone
           const delta = Math.abs(bsDelta(spot, c.strike, dte, iv, isCallMode));
@@ -774,7 +775,7 @@ export class OptionsScanner {
           // ── Expansion potential + scoring ───────────────────────────────
           const ep = calcExpansionPotential(compression, breakout, ta, regimeBonus, iv);
 
-          const atmScore       = Math.max(0, 1 - Math.abs(pctOtm) / 10);
+          const atmScore       = Math.max(0, 1 - Math.abs(pctOtm) / MAX_OTM_PCT);
           const liquidityScore = Math.min(1, Math.log10(Math.max(1, volume)) / 4);
           const oiScore        = Math.min(1, Math.log10(Math.max(1, oi)) / 3);
           const spreadScore    = Math.max(0, 1 - spreadPct / MAX_SPREAD_PCT);
