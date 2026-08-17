@@ -58,8 +58,8 @@ export type Regime =
   | "BEARISH"       // SPY + QQQ both sell/strong_sell → puts only,   +20 bonus
   | "PARTIAL_BULL"  // one bullish, one neutral        → calls,       +10 bonus
   | "PARTIAL_BEAR"  // one bearish, one neutral        → puts,        +10 bonus
-  | "CONFLICTED"    // one bull, one bear              → per-ticker dir, 0 bonus
-  | "CHOPPY";       // both neutral                   → skip (range-bound)
+  | "CONFLICTED"    // one bull, one bear              → per-ticker dir, single survivor, -20%
+  | "CHOPPY";       // both neutral                   → per-ticker dir, single survivor, -35%
 
 export interface TASignal {
   symbol:           string;
@@ -107,7 +107,9 @@ export interface OptionSetup {
   triggerLevel:        number;
   volumeSpike:         number;
   scoreBreakdown:      ScoreBreakdown;
-  conflictedRegime:    boolean;
+  // Set when the setup came from a "single survivor" regime (each ticker followed
+  // its own TA rather than a market-wide direction) — worth flagging as lower confidence.
+  regimeWarning:       "CONFLICTED" | "CHOPPY" | null;
   score:               number;
 }
 
@@ -432,7 +434,7 @@ function analyzeRegime(taByTicker: Map<string, TASignal>): RegimeAnalysis {
   if (spyBear && qqqBear) return { regime: "BEARISH",      regimeBonus: 20, preferredDirection: "Put",  shouldSkip: false };
   if ((spyBull && qqqNtr) || (qqqBull && spyNtr)) return { regime: "PARTIAL_BULL", regimeBonus: 10, preferredDirection: "Call", shouldSkip: false };
   if ((spyBear && qqqNtr) || (qqqBear && spyNtr)) return { regime: "PARTIAL_BEAR", regimeBonus: 10, preferredDirection: "Put",  shouldSkip: false };
-  if (spyNtr  && qqqNtr)  return { regime: "CHOPPY",       regimeBonus:  0, preferredDirection: "Both", shouldSkip: true  };
+  if (spyNtr  && qqqNtr)  return { regime: "CHOPPY",       regimeBonus:  0, preferredDirection: "Both", shouldSkip: false };
   // one bull, one bear
   return { regime: "CONFLICTED", regimeBonus: 0, preferredDirection: "Both", shouldSkip: false };
 }
@@ -579,10 +581,20 @@ export class OptionsScanner {
       return { scannedAt, regime, regimeBonus, spyLabel, qqqLabel, setups: [], skippedEarnings: [], tickerStates: [], contractsEvaluated: 0, contractsPassed: 0 };
     }
 
+    // Regimes with no reliable market-wide direction: each ticker follows its own
+    // TA instead of the regime's preferred direction, and only the single
+    // best-scoring setup survives, at a steep score penalty.
+    const regimeWarning: "CONFLICTED" | "CHOPPY" | null =
+      regime === "CONFLICTED" || regime === "CHOPPY" ? regime : null;
+    const SINGLE_SURVIVOR_PENALTY: Record<"CONFLICTED" | "CHOPPY", number> = {
+      CONFLICTED: 0.80, // SPY/QQQ disagree — -20%
+      CHOPPY:     0.65, // SPY/QQQ both neutral, no real trend at all — -35%
+    };
+
     // ── Step 3: Per-ticker scan ───────────────────────────────────────────────
     const skippedEarnings: string[]    = [];
     const setups: OptionSetup[]        = [];
-    const conflictedSetups: OptionSetup[] = [];
+    const singleSurvivorSetups: OptionSetup[] = [];
     const stateMap = new Map<string, TickerState>();
     let contractsEvaluated = 0;
     let contractsPassed    = 0;
@@ -607,12 +619,12 @@ export class OptionsScanner {
       // Determine trade direction
       let isCallMode: boolean;
       if (preferredDirection === "Both") {
-        // CONFLICTED regime: follow individual ticker TA
+        // CONFLICTED/CHOPPY: no reliable market-wide direction — follow individual ticker TA
         if      (STRONG_LABELS.has(ta.label)) isCallMode = true;
         else if (WEAK_LABELS.has(ta.label))   isCallMode = false;
         else {
-          stateMap.set(target.ticker, invalidState(target.ticker, "neutral in conflicted regime"));
-          console.log(`[scanner] ${target.ticker} neutral in conflicted regime — skipping`);
+          stateMap.set(target.ticker, invalidState(target.ticker, `neutral in ${regime.toLowerCase()} regime`));
+          console.log(`[scanner] ${target.ticker} neutral in ${regime.toLowerCase()} regime — skipping`);
           continue;
         }
       } else {
@@ -769,8 +781,8 @@ export class OptionsScanner {
           const expansionNorm   = ep / 100;
           const expansionFactor = 0.4 + 0.6 * expansionNorm;
           const tfAlignFactor   = 0.5 + 0.5 * tfBonus;
-          const regimeFactor    = regime === "CONFLICTED"
-            ? (1 + regimeBonus / 40) * 0.80
+          const regimeFactor    = regimeWarning
+            ? (1 + regimeBonus / 40) * SINGLE_SURVIVOR_PENALTY[regimeWarning]
             : 1 + regimeBonus / 40;
 
           const score = ta.score
@@ -805,20 +817,21 @@ export class OptionsScanner {
               regimeFactor,
               monthly:      monthlyBonus,
             },
-            conflictedRegime: regime === "CONFLICTED",
+            regimeWarning,
             score,
           };
-          (regime === "CONFLICTED" ? conflictedSetups : setups).push(setup);
+          (regimeWarning ? singleSurvivorSetups : setups).push(setup);
         }
       } catch (err) {
         console.error(`[scanner] ${target.ticker} error:`, (err as Error).message);
       }
     }
 
-    // Allow top-1 conflicted setup through (with 0.80 regimeFactor penalty already applied)
-    if (conflictedSetups.length > 0) {
-      conflictedSetups.sort((a, b) => b.score - a.score);
-      setups.push(conflictedSetups[0]);
+    // CONFLICTED/CHOPPY: penalty already applied in regimeFactor; only the single
+    // best-scoring setup survives instead of flooding low-confidence, trend-less picks.
+    if (singleSurvivorSetups.length > 0) {
+      singleSurvivorSetups.sort((a, b) => b.score - a.score);
+      setups.push(singleSurvivorSetups[0]);
     }
 
     setups.sort((a, b) => b.score - a.score);

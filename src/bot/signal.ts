@@ -182,8 +182,14 @@ function formatSignal(s: OptionSetup, rank: number, maxSignals: number, contract
   const csIcon = s.compressionState === "EXPANSION READY" ? "🟢"
     : s.compressionState === "COILING" ? "🟡" : "🔵";
 
+  const regimeWarningLine = s.regimeWarning === "CONFLICTED"
+    ? `⚠️ *CONFLICTED REGIME* — SPY & QQQ diverge, reduced confidence`
+    : s.regimeWarning === "CHOPPY"
+    ? `⚠️ *CHOPPY REGIME* — SPY & QQQ both neutral, no market-wide trend, lowest confidence`
+    : null;
+
   const lines = [
-    ...(s.conflictedRegime ? [`⚠️ *CONFLICTED REGIME* — SPY & QQQ diverge, reduced confidence`, ``] : []),
+    ...(regimeWarningLine ? [regimeWarningLine, ``] : []),
     `${icon} *#${rank} ${s.ticker} — ${s.optionType.toUpperCase()}${monthly}*`,
     ``,
     `*Contract*`,
@@ -261,22 +267,6 @@ function formatMessage(result: ScanResult, top: OptionSetup[], date: string, max
     ].join("\n");
     const contractStats = `\n${statsHeader}`;
     trades = contractStats + top.map((s, i) => formatSignal(s, i + 1, maxSignals, contractsPassed)).join("\n\n─────────────────\n\n") + footer;
-  }
-
-  // CHOPPY early exit — still show regime + condition
-  if (regime === "CHOPPY") {
-    return [
-      `📊 *OPTIONS SCANNER — ${date}*`,
-      ``,
-      `*① MARKET REGIME*`,
-      regimeLine(regime, spyLabel, qqqLabel, regimeBonus),
-      ``,
-      `*② MARKET CONDITION*`,
-      `📡 Choppy / range-bound compression`,
-      ``,
-      `*④ ACTION*`,
-      `⏳ *NO TRADE* — SPY and QQQ both neutral. Waiting for directional alignment.`,
-    ].join("\n");
   }
 
   return s1 + s2 + s3 + s4 + trades;
