@@ -17,7 +17,7 @@ export interface UniverseOptions {
   maxPrice?:          number;  // keep contract costs sane
   minAvgVolume?:      number;  // 90d avg volume — liquid enough for an options chain
   minRelativeVolume?: number;  // today's volume vs 10d avg — filters for "something is happening"
-  minMarketCap?:      number;  // mid-cap+ tends to have real, liquid options chains
+  minMarketCap?:      number;  // small-cap+ floor; avg-volume/relative-volume filters do most of the liquidity work
 }
 
 const DEFAULTS: Required<UniverseOptions> = {
@@ -26,7 +26,7 @@ const DEFAULTS: Required<UniverseOptions> = {
   maxPrice:          1000,
   minAvgVolume:      1_000_000,
   minRelativeVolume: 1.0,
-  minMarketCap:      2_000_000_000,
+  minMarketCap:      500_000_000,
 };
 
 /**
