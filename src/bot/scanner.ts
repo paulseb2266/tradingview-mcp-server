@@ -156,7 +156,7 @@ const EARNINGS_SKIP_DAYS   = 7;
 const OHLCV_DAYS           = 65;  // daily bars to fetch for compression/breakout
 
 // Breakout
-const MIN_VOLUME_SPIKE     = 1.15; // was 1.3 — confirmed breakout needs 1.15x avg volume
+const MIN_VOLUME_SPIKE     = 1.0;  // was 1.3, then 1.15 — confirmed breakout needs avg volume or better
 const RETEST_TOLERANCE_PCT = 0.03; // was 0.02 — how close a retest must come to the broken level
 const EMA_CROSS_LOOKBACK   = 5;    // was 3 — bars to search back for the actual EMA cross
 
