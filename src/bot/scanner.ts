@@ -156,7 +156,9 @@ const EARNINGS_SKIP_DAYS   = 7;
 const OHLCV_DAYS           = 65;  // daily bars to fetch for compression/breakout
 
 // Breakout
-const MIN_VOLUME_SPIKE     = 1.3; // confirmed breakout needs 1.3x avg volume
+const MIN_VOLUME_SPIKE     = 1.15; // was 1.3 — confirmed breakout needs 1.15x avg volume
+const RETEST_TOLERANCE_PCT = 0.03; // was 0.02 — how close a retest must come to the broken level
+const EMA_CROSS_LOOKBACK   = 5;    // was 3 — bars to search back for the actual EMA cross
 
 // Compression — minimum combined score required to proceed
 const MIN_COMPRESSION_SCORE = 0.15;   // was 0.20 — lets EARLY BUILD (not-yet-coiled) setups through
@@ -383,34 +385,46 @@ function detectBreakout(bars: OHLCVBar[], isCall: boolean): BreakoutSignal {
 
   if (isCall) {
     const prevBroke = prev.close > prevResistance;
-    const retested  = current.low  <= prevResistance * 1.02;
+    const retested  = current.low  <= prevResistance * (1 + RETEST_TOLERANCE_PCT);
     const held      = current.close >= prevResistance * 0.99;
     if (prevBroke && retested && held) {
       return { hasBreakout: true, breakoutType: "retest", breakoutStrength: 0.65, volumeSpike, triggerLevel: prevResistance };
     }
   } else {
     const prevBroke = prev.close < prevSupport;
-    const retested  = current.high >= prevSupport * 0.98;
+    const retested  = current.high >= prevSupport * (1 - RETEST_TOLERANCE_PCT);
     const held      = current.close <= prevSupport * 1.01;
     if (prevBroke && retested && held) {
       return { hasBreakout: true, breakoutType: "retest", breakoutStrength: 0.65, volumeSpike, triggerLevel: prevSupport };
     }
   }
 
-  // Pattern C: EMA retest — last two closes crossed above/below 10-EMA from opposite side
+  // Pattern C: EMA retest — last 2 closes on the correct side of the 10-EMA, with
+  // the actual cross found anywhere in the last EMA_CROSS_LOOKBACK bars (not just
+  // the bar immediately before that 2-bar confirmation window).
   const closes = bars.map(b => b.close);
   const emas   = calcEMA(closes, 10);
   const ema0   = emas.at(-1)!;
   const ema1   = emas.at(-2)!;
-  const ema2   = emas.at(-3)!;
 
-  if (ema0 > 0 && ema1 > 0 && ema2 > 0) {
+  const crossedRecently = (fromBelow: boolean): boolean => {
+    for (let offset = 3; offset <= EMA_CROSS_LOOKBACK; offset++) {
+      const emaAt   = emas.at(-offset);
+      const closeAt = bars.at(-offset)?.close;
+      if (emaAt === undefined || emaAt <= 0 || closeAt === undefined) continue;
+      const wasOnOtherSide = fromBelow ? closeAt < emaAt : closeAt > emaAt;
+      if (wasOnOtherSide) return true;
+    }
+    return false;
+  };
+
+  if (ema0 > 0 && ema1 > 0) {
     if (isCall) {
-      if (current.close > ema0 && prev.close > ema1 && bars.at(-3)!.close < ema2) {
+      if (current.close > ema0 && prev.close > ema1 && crossedRecently(true)) {
         return { hasBreakout: true, breakoutType: "ema_retest", breakoutStrength: 0.50, volumeSpike, triggerLevel: ema0 };
       }
     } else {
-      if (current.close < ema0 && prev.close < ema1 && bars.at(-3)!.close > ema2) {
+      if (current.close < ema0 && prev.close < ema1 && crossedRecently(false)) {
         return { hasBreakout: true, breakoutType: "ema_retest", breakoutStrength: 0.50, volumeSpike, triggerLevel: ema0 };
       }
     }
