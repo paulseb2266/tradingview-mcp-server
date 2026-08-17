@@ -61,6 +61,11 @@ export type Regime =
   | "CONFLICTED"    // one bull, one bear              → per-ticker dir, single survivor, -20%
   | "CHOPPY";       // both neutral                   → per-ticker dir, single survivor, -35%
 
+// Stage 03/04 gate path a setup qualified through:
+//   "compression+breakout"  — compression >= MIN_COMPRESSION_SCORE AND any breakout pattern (A/B/C)
+//   "strong_breakout_only"  — Pattern A alone, at STRONG_BREAKOUT_VOLUME_SPIKE, bypassing compression
+export type QualifyingPath = "compression+breakout" | "strong_breakout_only";
+
 export interface TASignal {
   symbol:           string;
   score:            number;
@@ -106,6 +111,8 @@ export interface OptionSetup {
   breakoutType:        "volume_close" | "retest" | "ema_retest" | null;
   triggerLevel:        number;
   volumeSpike:         number;
+  // Which stage-03/04 gate path this setup qualified through — see QualifyingPath.
+  qualifyingPath:      QualifyingPath;
   scoreBreakdown:      ScoreBreakdown;
   // Set when the setup came from a "single survivor" regime (each ticker followed
   // its own TA rather than a market-wide direction) — worth flagging as lower confidence.
@@ -160,6 +167,10 @@ const MIN_VOLUME_SPIKE       = 1.0;  // was 1.3, then 1.15 — confirmed breakou
 const RETEST_TOLERANCE_PCT   = 0.03; // was 0.02 — how close a retest must come to the broken level
 const EMA_CROSS_LOOKBACK     = 5;    // was 3 — bars to search back for the actual EMA cross
 const PRICE_BREAK_TOLERANCE_PCT = 0.01; // Pattern A: close within 1% of the level counts as a break
+
+// Stage 03/04 gate: Pattern A at this volume spike bypasses compression entirely
+// (the original, stricter threshold — not the loosened MIN_VOLUME_SPIKE above).
+const STRONG_BREAKOUT_VOLUME_SPIKE = 1.3;
 
 // Compression — minimum combined score required to proceed
 const MIN_COMPRESSION_SCORE = 0.15;   // was 0.20 — lets EARLY BUILD (not-yet-coiled) setups through
@@ -679,26 +690,40 @@ export class OptionsScanner {
         continue;
       }
 
-      // Fetch OHLCV and gate on compression → breakout pattern
+      // Fetch OHLCV and gate on compression → breakout, with a second path for
+      // strong high-volume breakouts that bypasses compression entirely.
       const bars = await fetchOHLCV(target.ticker);
 
       const compression = detectCompression(bars);
-      if (!compression.isCompressing) {
-        stateMap.set(target.ticker, buildingState(target.ticker, "price not yet compressing", compression.compressionStrength, compression.compressionState));
-        console.log(`[scanner] ${target.ticker} [${compression.compressionState}] score=${compression.compressionStrength.toFixed(2)} — skipping`);
+      const breakout    = detectBreakout(bars, isCallMode);
+
+      // Path 1 (existing): compression >= threshold AND any breakout pattern (A/B/C).
+      const path1Qualifies = compression.isCompressing && breakout.hasBreakout;
+
+      // Path 2 (new): Pattern A alone, at the original stricter volume threshold —
+      // bypasses compression entirely. Patterns B/C still require Path 1.
+      const path2Qualifies = breakout.hasBreakout
+        && breakout.breakoutType === "volume_close"
+        && breakout.volumeSpike >= STRONG_BREAKOUT_VOLUME_SPIKE;
+
+      if (!path1Qualifies && !path2Qualifies) {
+        if (!compression.isCompressing) {
+          stateMap.set(target.ticker, buildingState(target.ticker, "price not yet compressing", compression.compressionStrength, compression.compressionState));
+          console.log(`[scanner] ${target.ticker} [${compression.compressionState}] score=${compression.compressionStrength.toFixed(2)} — skipping`);
+        } else {
+          stateMap.set(target.ticker, coilingState(target.ticker, compression.compressionStrength, compression.compressionState));
+          console.log(`[scanner] ${target.ticker} no breakout confirmed — skipping`);
+        }
         continue;
       }
 
-      const breakout = detectBreakout(bars, isCallMode);
-      if (!breakout.hasBreakout) {
-        stateMap.set(target.ticker, coilingState(target.ticker, compression.compressionStrength, compression.compressionState));
-        console.log(`[scanner] ${target.ticker} no breakout confirmed — skipping`);
-        continue;
-      }
+      // Path 1 takes priority when both are true — Path 2 is a bypass for when
+      // compression specifically didn't qualify, not a separate stronger signal.
+      const qualifyingPath: QualifyingPath = path1Qualifies ? "compression+breakout" : "strong_breakout_only";
 
       console.log(
         `[scanner] ${target.ticker} [${compression.compressionState}] score=${compression.compressionStrength.toFixed(2)}` +
-        ` breakout=${breakout.breakoutType} vol=${breakout.volumeSpike.toFixed(1)}x`,
+        ` breakout=${breakout.breakoutType} vol=${breakout.volumeSpike.toFixed(1)}x path=${qualifyingPath}`,
       );
 
       // Earnings check
@@ -832,6 +857,7 @@ export class OptionsScanner {
             breakoutType:  breakout.breakoutType,
             triggerLevel:  breakout.triggerLevel,
             volumeSpike:   breakout.volumeSpike,
+            qualifyingPath,
             scoreBreakdown: {
               taStrength:   ta.score,
               expansion:    expansionFactor,
