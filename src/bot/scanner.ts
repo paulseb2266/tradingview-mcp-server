@@ -137,6 +137,7 @@ export interface ScanResult {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const TIMEFRAMES       = ["60", "240", "1D", "1W"] as const;
+const INTRADAY_TFS     = new Set(["60", "240"]);
 const STRONG_LABELS    = new Set(["strong_buy",  "buy"]);
 const WEAK_LABELS      = new Set(["strong_sell", "sell"]);
 
@@ -148,7 +149,7 @@ const MAX_SPREAD_PCT   = 0.15;    // was 0.25 — tighter spread requirement
 const MAX_IV           = 1.20;
 const MIN_DELTA        = 0.3;     // was 0.35
 const MAX_DELTA        = 0.8;     // was 0.55
-const MIN_STRONG_TFS   = 3;
+const MIN_STRONG_TFS   = 2;     // was 3 — plus at least one intraday TF required, see gate below
 
 const EARNINGS_SKIP_DAYS   = 7;
 const OHLCV_DAYS           = 65;  // daily bars to fetch for compression/breakout
@@ -644,10 +645,19 @@ export class OptionsScanner {
         continue;
       }
 
-      // Require ≥3 of 4 TFs aligned
+      // Require ≥2 of 4 TFs aligned
       if (ta.strongTimeframes.length < MIN_STRONG_TFS) {
         stateMap.set(target.ticker, buildingState(target.ticker, `${ta.strongTimeframes.length}/4 TFs aligned`));
         console.log(`[scanner] ${target.ticker} only ${ta.strongTimeframes.length}/${TIMEFRAMES.length} strong TFs`);
+        continue;
+      }
+
+      // ...but at least one must be intraday (60m/240m) — a 1D+1W-only pair says
+      // nothing about near-term timing for a 1-2 week hold. (Always satisfied once
+      // 3+ TFs are strong, since only two of the four TFs are non-intraday.)
+      if (!ta.strongTimeframes.some(tf => INTRADAY_TFS.has(tf))) {
+        stateMap.set(target.ticker, buildingState(target.ticker, `strong TFs (${ta.strongTimeframes.join("+")}) lack intraday confirmation`));
+        console.log(`[scanner] ${target.ticker} strong TFs (${ta.strongTimeframes.join("+")}) — no intraday confirmation`);
         continue;
       }
 
