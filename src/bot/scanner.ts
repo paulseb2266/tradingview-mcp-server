@@ -1,7 +1,7 @@
 import YahooFinance from "yahoo-finance2";
 const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey", "ripHistorical"] });
 import { TradingViewClient } from "../api/client.js";
-import { TAClient, scoreToLabel } from "../api/ta.js";
+import { TAClient, scoreToLabel, type RankedSymbol } from "../api/ta.js";
 import { Cache } from "../utils/cache.js";
 import { RateLimiter } from "../utils/rateLimit.js";
 
@@ -517,6 +517,12 @@ async function hasEarningsSoon(ticker: string): Promise<boolean> {
   }
 }
 
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  return chunks;
+}
+
 // ── Main scanner ───────────────────────────────────────────────────────────────
 
 export class OptionsScanner {
@@ -537,15 +543,18 @@ export class OptionsScanner {
     console.log(`[scanner] Starting scan at ${scannedAt}`);
 
     // ── Step 1: Fetch TA for all targets ─────────────────────────────────────
-    const taResult = await this.taClient.rankByTA({
-      symbols:    this.targets.map(t => t.tvSymbol),
-      timeframes: [...TIMEFRAMES],
-    });
+    // rankByTA caps a single call at 50 symbols, so batch larger target lists.
+    const symbolChunks = chunk(this.targets.map(t => t.tvSymbol), 50);
+    const rankedAll: RankedSymbol[] = [];
+    for (const symbols of symbolChunks) {
+      const chunkResult = await this.taClient.rankByTA({ symbols, timeframes: [...TIMEFRAMES] });
+      rankedAll.push(...chunkResult.ranked);
+    }
 
     const taBySymbol = new Map<string, TASignal>();
     const taByTicker = new Map<string, TASignal>();
 
-    for (const ranked of taResult.ranked) {
+    for (const ranked of rankedAll) {
       const strongTimeframes = TIMEFRAMES.filter(tf =>
         STRONG_LABELS.has(scoreToLabel(ranked.breakdown[tf] ?? 0))
       );

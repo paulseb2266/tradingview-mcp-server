@@ -9,7 +9,7 @@
  *   DYNAMIC_UNIVERSE (default true) — screen TradingView for a live candidate
  *     list instead of the hardcoded DEFAULT_TARGETS watchlist. Falls back to
  *     DEFAULT_TARGETS if the screen fails or returns nothing.
- *   UNIVERSE_LIMIT (default 40) — max candidates pulled from the dynamic screen.
+ *   UNIVERSE_LIMIT (default 100) — max candidates pulled from the dynamic screen.
  */
 
 import fetch from "node-fetch";
@@ -298,25 +298,23 @@ async function sendTelegram(token: string, chatId: string, text: string): Promis
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-// TAClient.rankByTA (src/api/ta.ts) hard-caps a single call at 50 symbols.
-const MAX_TA_SYMBOLS = 50;
-
 async function buildTargets(): Promise<ScanTarget[]> {
   const useDynamic = (process.env.DYNAMIC_UNIVERSE ?? "true").toLowerCase() !== "false";
   if (!useDynamic) return DEFAULT_TARGETS;
 
-  const limit   = parseInt(process.env.UNIVERSE_LIMIT ?? "40", 10);
+  const limit   = parseInt(process.env.UNIVERSE_LIMIT ?? "100", 10);
   const dynamic = await buildDynamicUniverse({ limit });
 
   // DEFAULT_TARGETS is always merged in as a floor — thin-candidate days
   // (e.g. low relative-volume days) still have a baseline set of tickers to
   // scan instead of coming up empty. This also covers total screen failure.
+  // No cap here: OptionsScanner batches its own TA calls (see scanner.ts),
+  // so there's no artificial ceiling on total targets scanned.
   const seen    = new Set(DEFAULT_TARGETS.map(t => t.ticker));
   const targets = [...DEFAULT_TARGETS];
 
   let dynamicAdded = 0;
   for (const t of dynamic) {
-    if (targets.length >= MAX_TA_SYMBOLS) break; // stay under rankByTA's 50-symbol cap
     if (seen.has(t.ticker)) continue;
     seen.add(t.ticker);
     targets.push(t);
