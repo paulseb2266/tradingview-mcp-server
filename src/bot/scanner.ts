@@ -152,12 +152,31 @@ const WEAK_LABELS      = new Set(["strong_sell", "sell"]);
 const MIN_DTE          = 15;      // was 21
 const MAX_DTE          = 120;     // was 45
 const MIN_OI           = 500;     // was 1,000 — applies across the board now, not just thin names
-const MAX_OTM_PCT      = 15;      // was 10
 const MAX_SPREAD_PCT   = 0.15;    // was 0.25 — tighter spread requirement
 const MAX_IV           = 1.20;
 const MIN_DELTA        = 0.3;     // was 0.35
 const MAX_DELTA        = 0.8;     // was 0.55
 const MIN_STRONG_TFS   = 2;     // was 3 — plus at least one intraday TF required, see gate below
+
+// OTM distance is tiered by spot price. A near-the-money call on an expensive
+// stock carries far more absolute premium than the same delta on a cheap stock
+// (time value scales with the underlying's price), so it takes a further-OTM,
+// cheaper strike to land under the fixed $500 contract cost cap while still
+// landing inside the 0.3-0.8 delta band. Without this, high-priced names
+// (AMD/NVDA/META-class, $400+) get structurally excluded — see contract-level
+// diagnostic on AMD: cost + spread + OTM alone consumed the entire chain
+// before delta/OI/IV ever got evaluated.
+const OTM_TIER_LOW_PRICE  = 200;  // spot < this  -> 15% cap
+const OTM_TIER_HIGH_PRICE = 400;  // spot <= this -> 20% cap; above -> 25%
+const OTM_PCT_LOW  = 15;          // was the flat MAX_OTM_PCT for all tickers
+const OTM_PCT_MID  = 20;
+const OTM_PCT_HIGH = 25;
+
+function maxOtmPctFor(spot: number): number {
+  if (spot < OTM_TIER_LOW_PRICE)  return OTM_PCT_LOW;
+  if (spot <= OTM_TIER_HIGH_PRICE) return OTM_PCT_MID;
+  return OTM_PCT_HIGH;
+}
 
 const EARNINGS_SKIP_DAYS   = 7;
 const OHLCV_DAYS           = 65;  // daily bars to fetch for compression/breakout
@@ -796,9 +815,10 @@ export class OptionsScanner {
           const iv = c.impliedVolatility ?? 0;
           if (iv <= 0 || iv > MAX_IV) continue;
 
-          // OTM distance
-          const pctOtm = ((c.strike - spot) / spot) * 100;
-          if (Math.abs(pctOtm) > MAX_OTM_PCT) continue;
+          // OTM distance — tiered by spot price (see maxOtmPctFor)
+          const pctOtm  = ((c.strike - spot) / spot) * 100;
+          const maxOtmPct = maxOtmPctFor(spot);
+          if (Math.abs(pctOtm) > maxOtmPct) continue;
 
           // Delta — quality zone
           const delta = Math.abs(bsDelta(spot, c.strike, dte, iv, isCallMode));
@@ -816,7 +836,7 @@ export class OptionsScanner {
           // ── Expansion potential + scoring ───────────────────────────────
           const ep = calcExpansionPotential(compression, breakout, ta, regimeBonus, iv);
 
-          const atmScore       = Math.max(0, 1 - Math.abs(pctOtm) / MAX_OTM_PCT);
+          const atmScore       = Math.max(0, 1 - Math.abs(pctOtm) / maxOtmPct);
           const liquidityScore = Math.min(1, Math.log10(Math.max(1, volume)) / 4);
           const oiScore        = Math.min(1, Math.log10(Math.max(1, oi)) / 3);
           const spreadScore    = Math.max(0, 1 - spreadPct / MAX_SPREAD_PCT);
