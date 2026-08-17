@@ -158,7 +158,7 @@ const OHLCV_DAYS           = 65;  // daily bars to fetch for compression/breakou
 const MIN_VOLUME_SPIKE     = 1.3; // confirmed breakout needs 1.3x avg volume
 
 // Compression — minimum combined score required to proceed
-const MIN_COMPRESSION_SCORE = 0.20;
+const MIN_COMPRESSION_SCORE = 0.15;   // was 0.20 — lets EARLY BUILD (not-yet-coiled) setups through
 
 // Tickers with thinner options chains get relaxed OI/volume thresholds
 const LOW_OI_TICKERS = new Set(["HOOD", "SOFI", "RIVN", "MARA", "RIOT", "SOUN"]);
