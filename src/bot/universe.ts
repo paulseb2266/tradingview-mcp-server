@@ -13,7 +13,7 @@ import type { ScanTarget } from "./scanner.js";
 
 export interface UniverseOptions {
   limit?:             number;  // max candidates to return
-  minPrice?:          number;  // avoid penny stocks
+  minPrice?:          number;  // avoid penny/low-liquidity, high-IV names
   maxPrice?:          number;  // keep contract costs sane
   minAvgVolume?:      number;  // 90d avg volume — liquid enough for an options chain
   minRelativeVolume?: number;  // today's volume vs 10d avg — filters for "something is happening"
@@ -22,7 +22,7 @@ export interface UniverseOptions {
 
 const DEFAULTS: Required<UniverseOptions> = {
   limit:             40,
-  minPrice:          5,
+  minPrice:          20,
   maxPrice:          1000,
   minAvgVolume:      1_000_000,
   minRelativeVolume: 1.0,
