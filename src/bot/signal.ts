@@ -12,12 +12,14 @@
  *   UNIVERSE_LIMIT (default 100) — max candidates pulled from the dynamic screen.
  */
 
+import { writeFileSync } from "fs";
 import fetch from "node-fetch";
 import {
   OptionsScanner, DEFAULT_TARGETS,
   type ScanTarget, type OptionSetup, type Regime, type ScanResult, type TickerState, type ScoreBreakdown,
 } from "./scanner.js";
 import { buildDynamicUniverse } from "./universe.js";
+import { SIGNALS_PATH } from "./portfolio.js";
 
 function requireEnv(key: string): string {
   const val = process.env[key];
@@ -330,6 +332,11 @@ async function main(): Promise<void> {
   const message = formatMessage(result, top, date, maxSignals);
   console.log(`[signal] Regime=${result.regime} signals=${top.length} earnings_skipped=${result.skippedEarnings.length}`);
   await sendTelegram(telegramToken, chatId, message);
+
+  // Hand today's signals to the paper trader (papertrader.ts reads this file
+  // to open positions — no duplicate scanning needed).
+  writeFileSync(SIGNALS_PATH, JSON.stringify({ date, signals: top }, null, 2));
+
   console.log("[signal] Done.");
 }
 

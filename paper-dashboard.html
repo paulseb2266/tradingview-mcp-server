@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paper Trading Dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:            #f9f9f7;
+    --surface:         #fcfcfb;
+    --text-primary:    #0b0b0b;
+    --text-secondary:  #52514e;
+    --text-muted:      #898781;
+    --gridline:        #e1e0d9;
+    --border:          rgba(11,11,11,0.10);
+    --good:            #0ca30c;
+    --critical:        #d03b3b;
+    --good-bg:         #e6f6e6;
+    --critical-bg:     #fbeaea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page:            #0d0d0d;
+      --surface:         #1a1a19;
+      --text-primary:    #ffffff;
+      --text-secondary:  #c3c2b7;
+      --text-muted:      #898781;
+      --gridline:        #2c2c2a;
+      --border:          rgba(255,255,255,0.10);
+      --good:            #0ca30c;
+      --critical:        #e66767;
+      --good-bg:         #10240f;
+      --critical-bg:     #2c1414;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:            #0d0d0d;
+    --surface:         #1a1a19;
+    --text-primary:    #ffffff;
+    --text-secondary:  #c3c2b7;
+    --text-muted:      #898781;
+    --gridline:        #2c2c2a;
+    --border:          rgba(255,255,255,0.10);
+    --good:            #0ca30c;
+    --critical:        #e66767;
+    --good-bg:         #10240f;
+    --critical-bg:     #2c1414;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .page { max-width: 1100px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+
+  header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.75rem; }
+  h1 { font-size: 1.4rem; font-weight: 650; margin: 0; }
+  .last-updated { font-size: 0.8rem; color: var(--text-muted); }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-bottom: 2rem; }
+  .stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; }
+  .stat-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 0.35rem; }
+  .stat-value { font-size: 1.55rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .stat-value.good { color: var(--good); }
+  .stat-value.critical { color: var(--critical); }
+
+  section { margin-bottom: 2.25rem; }
+  h2 { font-size: 1rem; font-weight: 650; margin: 0 0 0.75rem; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  thead th {
+    text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--text-muted); font-weight: 600; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--gridline);
+  }
+  tbody td { padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--gridline); font-variant-numeric: tabular-nums; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { text-align: right; }
+
+  .pill { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 999px; }
+  .pill.good { background: var(--good-bg); color: var(--good); }
+  .pill.critical { background: var(--critical-bg); color: var(--critical); }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  .empty { color: var(--text-muted); padding: 1.5rem; text-align: center; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Paper Trading Dashboard</h1>
+    <span class="last-updated" id="lastUpdated">loading…</span>
+  </header>
+
+  <div class="stat-row" id="statRow"></div>
+
+  <section>
+    <h2>Open Positions</h2>
+    <div class="table-wrap" id="openPositionsWrap"></div>
+  </section>
+
+  <section>
+    <h2>Closed Trades</h2>
+    <div class="table-wrap" id="closedTradesWrap"></div>
+  </section>
+</div>
+
+<script>
+  const fmtMoney = n => n === null || n === undefined ? '—' : (n < 0 ? '-$' + Math.abs(n).toFixed(2) : '$' + n.toFixed(2));
+  const fmtPct = n => n === null || n === undefined ? '—' : (n >= 0 ? '+' : '') + (n * 100).toFixed(0) + '%';
+  const pnlClass = n => n === null || n === undefined ? '' : (n >= 0 ? 'good' : 'critical');
+
+  function statTile(label, value, cls) {
+    return \`<div class="stat-tile"><div class="stat-label">\${label}</div><div class="stat-value \${cls||''}">\${value}</div></div>\`;
+  }
+
+  function renderStats(data) {
+    const totalEquity = data.balance + data.openPositions.reduce((s, p) => s + (p.currentPrice !== null ? p.currentPrice * 100 : p.costBasis), 0);
+    const totalPnl = totalEquity - data.startingBalance;
+    document.getElementById('statRow').innerHTML = [
+      statTile('Cash Balance', fmtMoney(data.balance)),
+      statTile('Total Equity', fmtMoney(totalEquity), pnlClass(totalPnl)),
+      statTile('Total P&L', fmtMoney(totalPnl), pnlClass(totalPnl)),
+      statTile('Open Positions', data.openPositions.length),
+      statTile('Win Rate', data.stats.winRate === null ? '—' : (data.stats.winRate*100).toFixed(0) + '%'),
+      statTile('Realized P&L', fmtMoney(data.stats.totalRealizedPnl), pnlClass(data.stats.totalRealizedPnl)),
+    ].join('');
+  }
+
+  function renderOpenPositions(positions) {
+    const wrap = document.getElementById('openPositionsWrap');
+    if (!positions.length) { wrap.innerHTML = '<div class="empty">No open positions.</div>'; return; }
+    wrap.innerHTML = \`<table>
+      <thead><tr><th>Ticker</th><th>Contract</th><th>Entry</th><th class="num">Entry $</th><th class="num">Current $</th><th class="num">P&L</th><th class="num">DTE</th></tr></thead>
+      <tbody>\${positions.map(p => \`
+        <tr>
+          <td>\${p.ticker}</td>
+          <td>\${p.strike}\${p.optionType[0]} \${p.expiryDate}</td>
+          <td>\${p.entryDate}</td>
+          <td class="num">\${fmtMoney(p.entryPrice)}</td>
+          <td class="num">\${p.currentPrice !== null ? fmtMoney(p.currentPrice) : '—'}</td>
+          <td class="num"><span class="pill \${pnlClass(p.pnlPct)}">\${fmtPct(p.pnlPct)} · \${fmtMoney(p.pnlDollars)}</span></td>
+          <td class="num">\${p.dteRemaining !== null ? p.dteRemaining : '—'}</td>
+        </tr>\`).join('')}
+      </tbody></table>\`;
+  }
+
+  function renderClosedTrades(trades) {
+    const wrap = document.getElementById('closedTradesWrap');
+    if (!trades.length) { wrap.innerHTML = '<div class="empty">No closed trades yet.</div>'; return; }
+    wrap.innerHTML = \`<table>
+      <thead><tr><th>Ticker</th><th>Contract</th><th>Entry → Exit</th><th class="num">Entry $</th><th class="num">Exit $</th><th class="num">P&L</th><th>Reason</th></tr></thead>
+      <tbody>\${trades.map(t => \`
+        <tr>
+          <td>\${t.ticker}</td>
+          <td>\${t.strike}\${t.optionType[0]} \${t.expiryDate}</td>
+          <td>\${t.entryDate} → \${t.exitDate}</td>
+          <td class="num">\${fmtMoney(t.entryPrice)}</td>
+          <td class="num">\${fmtMoney(t.exitPrice)}</td>
+          <td class="num"><span class="pill \${pnlClass(t.profitLoss)}">\${fmtPct(t.profitLossPct)} · \${fmtMoney(t.profitLoss)}</span></td>
+          <td>\${t.exitReason}</td>
+        </tr>\`).join('')}
+      </tbody></table>\`;
+  }
+
+  async function load() {
+    try {
+      const res = await fetch('/api/data');
+      const data = await res.json();
+      renderStats(data);
+      renderOpenPositions(data.openPositions);
+      renderClosedTrades(data.closedTrades);
+      document.getElementById('lastUpdated').textContent = 'Updated ' + new Date(data.lastUpdated).toLocaleString();
+    } catch (e) {
+      document.getElementById('lastUpdated').textContent = 'Failed to load data';
+    }
+  }
+
+  load();
+  setInterval(load, 30000);
+</script>
+</body>
+</html>
