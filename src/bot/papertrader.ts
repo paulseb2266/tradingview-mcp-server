@@ -156,12 +156,9 @@ async function writeDashboardData(portfolio: ReturnType<typeof loadPortfolio>): 
   }, null, 2));
 }
 
-async function main(): Promise<void> {
-  if (!isMarketHours() && process.env.FORCE_RUN !== "true") {
-    console.log("[papertrader] Outside market hours — skipping tick. (set FORCE_RUN=true to override)");
-    return;
-  }
+export { isMarketHours };
 
+export async function runTick(): Promise<void> {
   const portfolio = loadPortfolio();
   await ingestTodaysSignals(portfolio);
   await checkExits(portfolio);
@@ -170,7 +167,20 @@ async function main(): Promise<void> {
   console.log(`[papertrader] Tick done. Balance=$${portfolio.balance.toFixed(2)} openPositions=${portfolio.positions.length}`);
 }
 
-main().catch(err => {
-  console.error("[papertrader] Fatal:", err);
-  process.exit(1);
-});
+// CLI entry point — single tick then exit. Used for manual/FORCE_RUN testing;
+// the scheduled task now launches papertrader-daemon.ts instead, which imports
+// runTick() and loops internally rather than relying on repeated task triggers.
+async function main(): Promise<void> {
+  if (!isMarketHours() && process.env.FORCE_RUN !== "true") {
+    console.log("[papertrader] Outside market hours — skipping tick. (set FORCE_RUN=true to override)");
+    return;
+  }
+  await runTick();
+}
+
+if (process.argv[1] && process.argv[1].endsWith("papertrader.js")) {
+  main().catch(err => {
+    console.error("[papertrader] Fatal:", err);
+    process.exit(1);
+  });
+}
