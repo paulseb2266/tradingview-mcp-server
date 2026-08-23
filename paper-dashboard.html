@@ -158,7 +158,7 @@
   const fmtMoneyCompact = n => {
     const sign = n < 0 ? '-' : '';
     const abs = Math.abs(n);
-    return sign + '$' + (abs >= 1000 ? (abs/1000).toFixed(1) + 'K' : abs.toFixed(0));
+    return sign + '$' + (abs >= 10000 ? (abs/1000).toFixed(1) + 'K' : abs.toFixed(0));
   };
   const fmtPct = n => n === null || n === undefined ? '—' : (n >= 0 ? '+' : '') + (n * 100).toFixed(0) + '%';
   const pnlClass = n => n === null || n === undefined ? '' : (n >= 0 ? 'good' : 'critical');
@@ -317,7 +317,9 @@
       renderEquityChart(data);
       renderOpenPositions(data.openPositions);
       renderClosedTrades(data.closedTrades);
-      document.getElementById('lastUpdated').textContent = 'Updated ' + new Date(data.lastUpdated).toLocaleString();
+      document.getElementById('lastUpdated').textContent = data.lastUpdated
+        ? 'Updated ' + new Date(data.lastUpdated).toLocaleString()
+        : 'No data yet — waiting for the first trading day';
     } catch (e) {
       document.getElementById('lastUpdated').textContent = 'Failed to load data';
     }
